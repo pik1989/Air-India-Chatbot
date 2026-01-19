@@ -1,175 +1,112 @@
-[# Air India Chatbot - PDF-based Q&A with Grok
+# Air India Chatbot
 
-A simple **Streamlit** web application that allows you to ask questions about **Air India** using information extracted from multiple PDF documents (policies, manuals, FAQs, etc.).
+A simple Streamlit-based chatbot for answering questions about Air India using PDF documents as the knowledge base. Powered by xAI's Grok-4 model via LangChain.
 
-The application uses **xAI's Grok-4** model and performs **very basic context stuffing** (whole documents concatenated).
+## Overview
 
-Great for quick prototyping, internal knowledge base Q&A, or as a starting point for more advanced RAG applications.
+This project creates an interactive Q&A interface where users can ask questions related to Air India. The chatbot loads content from PDF files stored in the `pdfs` folder and uses it as context to generate accurate, concise responses. It leverages LangChain for document loading and prompting, and xAI's Grok-4 for natural language processing.
 
-<br>
+Key features:
+- Loads and processes multiple PDF files recursively from a directory.
+- Concatenates PDF content to form a single context (note: for production, consider using a vector store for better scalability).
+- Streams responses in real-time for a smooth user experience.
+- Caches documents and the LLM instance to optimize performance.
+- Restricts answers to information available in the provided PDFs; responds with "I don't have enough information" if the query can't be answered from the context.
 
-## ✨ Features
+## Features
 
-- Chat interface powered by Streamlit
-- Loads all PDFs from the `pdfs/` folder automatically (recursive)
-- Uses **Grok-4** from xAI (streaming responses)
-- Maintains chat history during the session
-- Clear chat history button
-- Basic error handling & loading feedback
-- Very easy to deploy (Streamlit Community Cloud, Docker, etc.)
+- **PDF Document Loading**: Automatically loads all `.pdf` files from the `pdfs` folder using `DirectoryLoader` and `PyPDFLoader`.
+- **Prompt Engineering**: Uses a custom prompt template to ensure responses are based solely on the provided context.
+- **Streaming Responses**: Real-time response generation with a loading cursor for better UX.
+- **Chat History**: Maintains conversation history in the session state.
+- **Error Handling**: Graceful handling of missing APIs, empty PDF folders, or loading errors.
+- **Clear Chat Option**: Sidebar button to reset the chat history.
 
-<br>
+## Installation
 
-## 📁 Project Structure
+1. Clone the repository:
+   ```
+   git clone https://github.com/pik1989/Air-India-Chatbot.git
+   cd Air-India-Chatbot
+   ```
 
-Air-India-Chatbot/
-├── pdfs/                    ← put all your Air India related PDFs here
-│   ├── policy1.pdf
-│   ├── fares_rules.pdf
-│   └── ...
-├── app.py                   ← main Streamlit application
-├── requirements.txt
-└── README.md
+2. Install dependencies:
+   ```
+   pip install -r requirements.txt
+   ```
 
-<br>
+   The `requirements.txt` file includes:
+   ```
+   streamlit
+   langchain-xai
+   langchain-community
+   langchain-core
+   ```
 
-## 🚀 Quick Start
+3. Set up your xAI API key:
+   - Create a `.streamlit/secrets.toml` file in the project root with the following content:
+     ```
+     XAI_API_KEY = "your-xai-api-key-here"
+     ```
+   - Alternatively, set it as an environment variable:
+     ```
+     export XAI_API_KEY="your-xai-api-key-here"
+     ```
 
-### 1. Get your xAI API Key
+4. Add PDF documents:
+   - Place Air India-related PDF files (e.g., policies, FAQs, manuals) in the `pdfs` folder.
 
-Go to: https://console.x.ai  
-Create API key → copy it
+## Usage
 
-### 2. Clone repository
+1. Run the Streamlit app:
+   ```
+   streamlit run app.py
+   ```
 
-```bash
-git clone https://github.com/pik1989/Air-India-Chatbot.git
-cd Air-India-Chatbot](https://github.com/pik1989/Air-India-Chatbot/
- 
-This github has a folder: pdfs containing all pdfs, app.py containing the streamlit logic:
-import os
-import streamlit as st
-from langchain_xai import ChatXAI
-#from langchain_ollama import ChatOllama
-from langchain_community.document_loaders import DirectoryLoader, PyPDFLoader
-from langchain_core.prompts import PromptTemplate
-# ─── Page Config ───────────────────────────────────────────────────────────
-st.set_page_config(
-    page_title="PDF Q&A with Grok",
-    page_icon="📄",
-    layout="wide"
-)
-XAI_API_KEY = "YOUR-KEY"
-os.environ["XAI_API_KEY"] = XAI_API_KEY
-# ─── Configuration ─────────────────────────────────────────────────────────
-# Best practice: use st.secrets or environment variable
-XAI_API_KEY = os.getenv("XAI_API_KEY") or st.secrets.get("XAI_API_KEY", "")
-if not XAI_API_KEY:
-    st.error("XAI_API_KEY not found. Please set it in environment variables or .streamlit/secrets.toml")
-    st.stop()
-PDF_FOLDER = "pdfs" # ← change this to your actual folder
-GLOB_PATTERN = "**/*.pdf" # recursive search
-# ─── Prompt (modern style - no PipelinePromptTemplate) ─────────────────────
-prompt_template = """You are a helpful assistant answering questions based **only** on the provided context.
-If the information is not in the context, say "I don't have enough information in the documents".
-Context:
-{context}
-Question: {question}
-Answer concisely, clearly and naturally:"""
-PROMPT = PromptTemplate.from_template(prompt_template)
-# ─── Cache documents (load only once) ──────────────────────────────────────
-@st.cache_resource(show_spinner="Loading and processing PDFs...")
-def load_documents():
-    try:
-        loader = DirectoryLoader(
-            path=PDF_FOLDER,
-            glob=GLOB_PATTERN,
-            loader_cls=PyPDFLoader,
-            show_progress=True,
-            silent_errors=False
-        )
-        docs = loader.load()
-       
-        if not docs:
-            st.warning(f"No PDF files were found in folder: '{PDF_FOLDER}'")
-            return []
-           
-        total_pages = len(docs)
-        st.success(f"Loaded **{total_pages}** pages from PDFs")
-        return docs
-       
-    except Exception as e:
-        st.error(f"Error loading documents:\n{str(e)}")
-        return []
-# ─── Cache LLM instance ────────────────────────────────────────────────────
-@st.cache_resource
-def get_llm():
-    return ChatXAI(
-        model="grok-4",
-        api_key=XAI_API_KEY,
-        temperature=0.15,
-        max_tokens=2048,
-        streaming=True
-    )
-# ─── Main Application ──────────────────────────────────────────────────────
-def main():
-    st.title("📄 AirIndia Chatbot")
-    st.caption("Ask questions about Air India")
-    # Load documents (cached)
-    documents = load_documents()
-    if not documents:
-        st.stop()
-    # Very simple context concatenation
-    # (for production → use text splitter + vectorstore!)
-    context_text = "\n\n".join(doc.page_content for doc in documents)
-    # Chat history
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
-    # Display chat history
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
-    # User input
-    if question := st.chat_input("Ask a question about the documents..."):
-        # Add user message to history & UI
-        st.session_state.messages.append({"role": "user", "content": question})
-        with st.chat_message("user"):
-            st.markdown(question)
-        # Format prompt
-        formatted_prompt = PROMPT.format(
-            context=context_text,
-            question=question
-        )
-        # Generate response with streaming
-        with st.chat_message("assistant"):
-            message_placeholder = st.empty()
-            full_response = ""
-            try:
-                llm = get_llm()
-                for chunk in llm.stream(formatted_prompt):
-                    if hasattr(chunk, "content"):
-                        delta = chunk.content
-                    else:
-                        delta = str(chunk)
-                       
-                    full_response += delta
-                    message_placeholder.markdown(full_response + "▌")
-                # Final clean message
-                message_placeholder.markdown(full_response)
-                # Save to history
-                st.session_state.messages.append({
-                    "role": "assistant",
-                    "content": full_response
-                })
-            except Exception as e:
-                st.error(f"Error during generation:\n{str(e)}")
-    # Optional: clear chat button
-    if st.sidebar.button("Clear Chat History"):
-        st.session_state.messages = []
-        st.rerun()
-if __name__ == "__main__":
-    main()
- 
-and requirements.txt
- 
-Pls write a proper ReadMe)
+2. Open the app in your browser (typically at `http://localhost:8501`).
+
+3. Ask questions in the chat input, such as "What are Air India's baggage policies?" or "How do I book a flight?"
+
+4. The chatbot will respond based on the PDF content. If the information isn't available, it will indicate so.
+
+### Example
+
+- User: "What is Air India's policy on refunds?"
+- Bot: (Streams response based on PDF context)
+
+To clear the chat history, use the "Clear Chat History" button in the sidebar.
+
+## Configuration
+
+- **PDF Folder**: Set in `PDF_FOLDER = "pdfs"`. Change this if your PDFs are in a different directory.
+- **Glob Pattern**: `GLOB_PATTERN = "**/*.pdf"` for recursive loading.
+- **LLM Settings**: Uses Grok-4 with `temperature=0.15` and `max_tokens=2048`. Adjust in `get_llm()` if needed.
+- **Prompt Template**: Customizable in `prompt_template`. Ensures context-bound responses.
+
+## Limitations
+
+- **Context Size**: All PDF content is concatenated into a single string, which may exceed token limits for very large document sets. For production, integrate a text splitter and vector database (e.g., FAISS or Pinecone).
+- **No External Knowledge**: Responses are strictly limited to PDF content—no web searches or general knowledge.
+- **API Dependency**: Requires a valid xAI API key.
+
+## Contributing
+
+Contributions are welcome! Feel free to open issues or submit pull requests for improvements, such as:
+- Adding vector embeddings for better retrieval.
+- Supporting more document formats.
+- Enhancing error handling or UI.
+
+1. Fork the repository.
+2. Create a feature branch (`git checkout -b feature/YourFeature`).
+3. Commit your changes (`git commit -m 'Add YourFeature'`).
+4. Push to the branch (`git push origin feature/YourFeature`).
+5. Open a Pull Request.
+
+## License
+
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+
+## Acknowledgments
+
+- Built with [Streamlit](https://streamlit.io/), [LangChain](https://langchain.com/), and [xAI's Grok](https://x.ai/).
+- Inspired by simple PDF Q&A tutorials for educational purposes.
